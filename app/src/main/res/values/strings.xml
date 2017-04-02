@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Messaging Project</string>
+    <string name="edit_message">Enter a message</string>
+    <string name="button_send">Send</string>
+    <string name="button_show_group">Show group</string>
+    <string name="button_join_group">Join group</string>
+    <string name="button_leave_group">Leave group</string>
+</resources>
