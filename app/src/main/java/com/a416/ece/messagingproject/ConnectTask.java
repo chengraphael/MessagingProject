@@ -14,16 +14,11 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
-/**
- * Created by Ingenious on 4/1/2017.
- */
-
 public class ConnectTask extends AsyncTask<String, Void, String> {
+    private String result;
 
-    private ListView listView;
-
-    public ConnectTask(ListView listView) {
-        this.listView = listView;
+    public ConnectTask(String result) {
+        this.result = result;
     }
 
     @Override
@@ -54,6 +49,6 @@ public class ConnectTask extends AsyncTask<String, Void, String> {
 
     @Override
     protected void onPostExecute(String result) {
-
+        this.result = result;
     }
 }
