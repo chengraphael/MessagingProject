@@ -4,6 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:focusableInTouchMode="true"
     tools:context="com.a416.ece.messagingproject.MainActivity">
 
     <EditText
@@ -15,7 +16,7 @@
         android:layout_marginStart="16dp"
         android:ems="10"
         android:inputType="textPersonName"
-        android:text="@string/edit_message"
+        android:hint="@string/edit_message"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintHorizontal_bias="0.0"
         app:layout_constraintLeft_toLeftOf="parent"
@@ -53,7 +54,6 @@
         android:layout_height="wrap_content"
         android:layout_marginLeft="16dp"
         android:layout_marginTop="16dp"
-        android:onClick="showGroup"
         android:text="@string/button_show_group"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
