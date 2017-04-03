@@ -323,8 +323,12 @@ public class MainActivity extends AppCompatActivity {
                         newMessageJsons.add(messageArray.getString(i));
                     }
                 }
-                newMessageJsons.removeAll(messageJsons);
-                messageJsons.addAll(newMessageJsons);
+                if (messageJsons.size() == 0) {
+                    messageJsons.addAll(newMessageJsons);
+                } else {
+                    newMessageJsons = new ArrayList<String>(newMessageJsons.subList(messageJsons.size(), newMessageJsons.size()));
+                    messageJsons.addAll(newMessageJsons);
+                }
                 for (String s : newMessageJsons) {
                     JSONObject messageJson = new JSONObject(s);
                     String m = messageJson.getString("message");
