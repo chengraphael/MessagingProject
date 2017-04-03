@@ -9,6 +9,7 @@ import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.support.annotation.BoolRes;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -17,7 +18,9 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
+import android.widget.TextView;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -38,12 +41,15 @@ import java.util.concurrent.ExecutionException;
 
 public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE";
-    public static final String BACKEND = "http://ec2-54-145-217-121.compute-1.amazonaws.com:3000";
+    public static final String BACKEND = "http://ec2-34-207-106-58.compute-1.amazonaws.com:3000";
     //    public static final String BACKEND = "http://192.168.99.0:3000";
     public static ArrayAdapter adapter;
     public static ArrayList<String> list;
     public static ListView listView;
+    public static EditText groupIdEditText;
     public static SharedPreferences sharedPref;
+    public static String groupId = "";
+    public static Handler checkMessages;
 
     static class UIHandler extends Handler {
         public UIHandler() {
@@ -65,43 +71,19 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         listView = (ListView) findViewById(R.id.listView);
-
-
-        Button showGroup = (Button) findViewById(R.id.button2);
-        showGroup.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-//                try {
-//                    new ConnectTask(getApplicationContext(), false).execute(BACKEND + "/user/create", "PUT").get();
-//                } catch (InterruptedException e) {
-//                    e.printStackTrace();
-//                } catch (ExecutionException e) {
-//                    e.printStackTrace();
-//                }
-            }
-        });
+        groupIdEditText = (EditText) findViewById(R.id.groupIdText);
 
         Context context = getApplicationContext();
         sharedPref = context.getSharedPreferences(
                 getString(R.string.preference_file_key), Context.MODE_PRIVATE);
-        Log.v("KK", "wtf");
+        Log.v("Start", "wtf");
         if (!sharedPref.contains(getString(R.string.userid))) {
-            String result = "";
-            try {
-                result = new ConnectTask(getApplicationContext(), false).execute(BACKEND + "/user/create", "PUT", "").get();
-                SharedPreferences.Editor editor = sharedPref.edit();
-                if (result != "") {
-                    editor.putString(getString(R.string.userid), result);
-                    editor.apply();
-                }
-                Log.v("KK", sharedPref.getString("userid", "nope"));
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } catch (ExecutionException e) {
-                e.printStackTrace();
-            }
+            new CreateUserTask(this, false).execute(BACKEND + "/user/create", "PUT", "");
+        } else {
+            String userid = sharedPref.getString(getString(R.string.userid), "0");
+            new ConnectTask(this, false).execute(BACKEND + "/user/" + userid, "GET", "");
         }
-        Log.v("KK", sharedPref.getString("userid", "nope"));
+        Log.v("UserID", sharedPref.getString(getString(R.string.userid), "nope"));
 
         String[] values = new String[]{"Android", "iPhone", "WindowsMobile",
                 "Blackberry", "WebOS", "Ubuntu", "Windows7", "Max OS X",
@@ -148,26 +130,26 @@ public class MainActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
-    public void createGroup(View view) {
-        String result = "";
-        new ConnectTask(getApplicationContext(), false).execute(BACKEND + "group/create", "POST");
-    }
-
-    public void joinGroup(View view) {
-        EditText editText = (EditText) findViewById(R.id.groupIdText);
-        String groupId = editText.getText().toString();
-        String result = "";
-        String userid = sharedPref.getString("userid", "0");
-        if (!userid.equals("0")) {
-            new ConnectTask(getApplicationContext(), false).execute(BACKEND + "group/" + groupId + "/join", "POST", "{\"userid\": " + userid + "}");
+    public void joinGroup(View view) throws ExecutionException, InterruptedException {
+        String groupIdText = groupIdEditText.getText().toString();
+        String userid = sharedPref.getString(getString(R.string.userid), "0");
+        if (!userid.equals("0") && groupId.isEmpty()) {
+            String result = new JoinGroupTask(this, false, groupIdText, userid)
+                    .execute(BACKEND + "/group/" + groupIdText, "GET").get();
         }
     }
 
     public void quitGroup(View view) {
-        EditText editText = (EditText) findViewById(R.id.groupIdText);
-        String groupId = editText.getText().toString();
-        String result = "";
-        new ConnectTask(getApplicationContext(), false).execute(BACKEND + "group/" + groupId + "/quit", "POST", "");
+        String groupIdText = groupIdEditText.getText().toString();
+        String userid = sharedPref.getString("userid", "0");
+        if (!userid.equals("0") && !groupId.isEmpty()) {
+            new ConnectTask(this, false)
+                    .execute(BACKEND + "/group/" + groupIdText + "/quit",
+                            "POST",
+                            "{\"userid\": " + userid + "}");
+            groupId = "";
+            groupIdEditText.setText(groupId);
+        }
     }
 
     public void sendMessage(View view) {
@@ -176,6 +158,102 @@ public class MainActivity extends AppCompatActivity {
         String message = editText.getText().toString();
         intent.putExtra(EXTRA_MESSAGE, message);
         startActivity(intent);
+    }
+
+    public class GetGroupTask extends AsyncTask<String, Void, String> {
+        private Context UIContext;
+        private boolean repeat;
+
+        public GetGroupTask(Context context, boolean repeat) {
+            this.UIContext = context;
+            this.repeat = repeat;
+        }
+
+        @Override
+        protected String doInBackground(String... params) {
+            return connectToServer(false, params);
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+
+        }
+    }
+
+    public class CreateUserTask extends AsyncTask<String, Void, String> {
+        private Context UIContext;
+        private boolean repeat;
+
+        public CreateUserTask(Context context, boolean repeat) {
+            this.UIContext = context;
+            this.repeat = repeat;
+        }
+
+        @Override
+        protected String doInBackground(String... params) {
+            return connectToServer(false, params);
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            SharedPreferences.Editor editor = sharedPref.edit();
+            if (result != "") {
+                editor.putString(getString(R.string.userid), result);
+                editor.apply();
+            }
+            Log.v("KK", sharedPref.getString(getString(R.string.userid), "nope"));
+        }
+    }
+
+    public class JoinGroupTask extends AsyncTask<String, Void, String> {
+        private Context UIContext;
+        private boolean repeat;
+        private String groupIdText;
+        private String userid;
+
+        public JoinGroupTask(Context context, boolean repeat, String groupIdText, String userid) {
+            this.UIContext = context;
+            this.repeat = repeat;
+            this.groupIdText = groupIdText;
+            this.userid = userid;
+        }
+
+        @Override
+        protected String doInBackground(String... params) {
+            return connectToServer(false, params);
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            if (!result.contains(groupIdText) || result.equals("[]")) {
+                new JoinGroupTask(UIContext, false, groupIdText, userid)
+                        .execute(
+                                BACKEND + "/group/create",
+                                "POST",
+                                "{\"userid\": " + userid + "}"
+                        );
+            } else {
+                groupIdText = result;
+                new ConnectTask(UIContext, false)
+                        .execute(
+                                BACKEND + "/group/" + groupIdText + "/join",
+                                "POST",
+                                "{\"userid\": " + userid + "}"
+                        );
+                groupIdEditText.setText(groupIdText);
+                groupId = result;
+            }
+            if (repeat) {
+                Handler h = new Handler();
+                Runnable r = new Runnable() {
+                    @Override
+                    public void run() {
+                        new ConnectTask(UIContext, true).execute();
+                    }
+                };
+                h.postDelayed(r, 5000);
+            }
+        }
     }
 
     public class ConnectTask extends AsyncTask<String, Void, String> {
@@ -189,58 +267,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         protected String doInBackground(String... params) {
-            String string = "";
-            URL url = null;
-            HttpURLConnection urlConnection = null;
-            try {
-                url = new URL(params[0]);
-                urlConnection = (HttpURLConnection) url.openConnection();
-                if (params[1] == "POST") {
-                    urlConnection.setReadTimeout(5000);
-                    urlConnection.setConnectTimeout(5000);
-                    urlConnection.setRequestMethod("POST");
-                    urlConnection.setDoOutput(true);
-
-                    OutputStream os = urlConnection.getOutputStream();
-                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
-                    writer.write(params[2]);
-                    writer.flush();
-                    writer.close();
-                    os.flush();
-                    os.close();
-                } else if (params[1] == "PUT") {
-                    urlConnection.setReadTimeout(5000);
-                    urlConnection.setConnectTimeout(5000);
-                    urlConnection.setRequestMethod("PUT");
-                }
-
-                InputStream stream = new BufferedInputStream(urlConnection.getInputStream());
-                BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
-                StringBuilder builder = new StringBuilder();
-
-                String inputString;
-                while ((inputString = bufferedReader.readLine()) != null) {
-                    builder.append(inputString);
-                }
-
-                JSONObject topLevel = new JSONObject(builder.toString());
-                string = builder.toString();
-
-            } catch (IOException | JSONException e) {
-                e.printStackTrace();
-            } finally {
-                if (urlConnection != null) {
-                    urlConnection.disconnect();
-                }
-            }
-
-            if (repeat) {
-                Message msg = h.obtainMessage(0, string);
-//                Message msg = h.obtainMessage(0, "swag");
-                h.sendMessage(msg);
-            }
-
-            return string;
+            return connectToServer(this.repeat, params);
         }
 
         @Override
@@ -255,9 +282,61 @@ public class MainActivity extends AppCompatActivity {
                 };
                 h.postDelayed(r, 5000);
             }
-
         }
     }
 
+    private String connectToServer(boolean repeat, String... params) {
+        String string = "";
+        URL url;
+        HttpURLConnection urlConnection = null;
+        try {
+            url = new URL(params[0]);
+            urlConnection = (HttpURLConnection) url.openConnection();
+            if (params[1].equals("POST")) {
+                urlConnection.setReadTimeout(5000);
+                urlConnection.setConnectTimeout(5000);
+                urlConnection.setRequestMethod("POST");
+                urlConnection.setDoOutput(true);
+                urlConnection.setRequestProperty("Content-Type", "application/json");
+
+                OutputStream os = urlConnection.getOutputStream();
+                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                writer.write(params[2]);
+                writer.flush();
+                writer.close();
+                os.flush();
+                os.close();
+            } else if (params[1].equals("PUT")) {
+                urlConnection.setReadTimeout(5000);
+                urlConnection.setConnectTimeout(5000);
+                urlConnection.setRequestMethod("PUT");
+            }
+
+            InputStream stream = new BufferedInputStream(urlConnection.getInputStream());
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
+            StringBuilder builder = new StringBuilder();
+
+            String inputString;
+            while ((inputString = bufferedReader.readLine()) != null) {
+                builder.append(inputString);
+            }
+
+            string = builder.toString();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (urlConnection != null) {
+                urlConnection.disconnect();
+            }
+        }
+
+        if (repeat && !string.isEmpty()) {
+            Message msg = h.obtainMessage(0, string);
+            h.sendMessage(msg);
+        }
+
+        return string;
+    }
 
 }
