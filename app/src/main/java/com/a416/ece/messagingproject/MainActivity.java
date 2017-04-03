@@ -44,26 +44,28 @@ public class MainActivity extends AppCompatActivity {
     public static final String BACKEND = "http://ec2-34-207-106-58.compute-1.amazonaws.com:3000";
     //    public static final String BACKEND = "http://192.168.99.0:3000";
     public static ArrayAdapter adapter;
-    public static ArrayList<String> list;
+    public static ArrayList<String> messageJsons = new ArrayList<String>();
+    public static ArrayList<String> messages = new ArrayList<String>();
     public static ListView listView;
     public static EditText groupIdEditText;
+    public static EditText messageText;
     public static SharedPreferences sharedPref;
     public static String groupId = "";
     public static Handler checkMessages;
+    public static Runnable checkMessageRunnable;
+    Handler h = new UIHandler();
 
-    static class UIHandler extends Handler {
-        public UIHandler() {
+    private static class UIHandler extends Handler {
+        private UIHandler() {
         }
 
         @Override
         public void handleMessage(Message msg) {
-            list.add((String) msg.obj);
+            messages.add((String) msg.obj);
             adapter.notifyDataSetChanged();
             listView.setSelection(adapter.getCount() - 1);
         }
     }
-
-    Handler h = new UIHandler();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,18 +93,17 @@ public class MainActivity extends AppCompatActivity {
                 "OS/2", "Ubuntu", "Windows7", "Max OS X", "Linux", "OS/2",
                 "Android", "iPhone", "WindowsMobile"};
 
-        list = new ArrayList<>();
         for (String value : values) {
-            list.add(value);
+            messages.add(value);
         }
         adapter = new ArrayAdapter(this,
-                android.R.layout.simple_list_item_1, list);
+                android.R.layout.simple_list_item_1, messages);
 
         listView.setAdapter(adapter);
         listView.setTranscriptMode(ListView.TRANSCRIPT_MODE_NORMAL);
         listView.setStackFromBottom(true);
 
-        EditText messageText = (EditText) findViewById(R.id.messageText);
+        messageText = (EditText) findViewById(R.id.messageText);
         messageText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View v, boolean hasFocus) {
@@ -134,15 +135,16 @@ public class MainActivity extends AppCompatActivity {
         String groupIdText = groupIdEditText.getText().toString();
         String userid = sharedPref.getString(getString(R.string.userid), "0");
         if (!userid.equals("0") && groupId.isEmpty()) {
-            String result = new JoinGroupTask(this, false, groupIdText, userid)
-                    .execute(BACKEND + "/group/" + groupIdText, "GET").get();
+            new JoinGroupTask(this, false, groupIdText, userid)
+                    .execute(BACKEND + "/group/" + groupIdText, "GET");
         }
     }
 
     public void quitGroup(View view) {
         String groupIdText = groupIdEditText.getText().toString();
         String userid = sharedPref.getString("userid", "0");
-        if (!userid.equals("0") && !groupId.isEmpty()) {
+        if (!userid.equals("0") && !groupIdText.isEmpty()) {
+            checkMessages.removeCallbacks(checkMessageRunnable);
             new ConnectTask(this, false)
                     .execute(BACKEND + "/group/" + groupIdText + "/quit",
                             "POST",
@@ -153,11 +155,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void sendMessage(View view) {
-        Intent intent = new Intent(this, DisplayMessageActivity.class);
-        EditText editText = (EditText) findViewById(R.id.messageText);
-        String message = editText.getText().toString();
-        intent.putExtra(EXTRA_MESSAGE, message);
-        startActivity(intent);
+        String groupIdText = groupIdEditText.getText().toString();
+        String userid = sharedPref.getString("userid", "0");
+        String message = messageText.getText().toString();
+        if (!userid.equals("0") && !groupIdText.isEmpty()) {
+            String jsonMessage = "{\"userid\": " + userid + ", \"message\": \"" + message + "\"}";
+            messageText.setText("");
+            new ConnectTask(this, false)
+                    .execute(BACKEND + "/group/" + groupIdText + "/newMessage",
+                            "POST",
+                            jsonMessage);
+        }
     }
 
     public class GetGroupTask extends AsyncTask<String, Void, String> {
@@ -180,11 +188,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public class CreateUserTask extends AsyncTask<String, Void, String> {
+    private class CreateUserTask extends AsyncTask<String, Void, String> {
         private Context UIContext;
         private boolean repeat;
 
-        public CreateUserTask(Context context, boolean repeat) {
+        private CreateUserTask(Context context, boolean repeat) {
             this.UIContext = context;
             this.repeat = repeat;
         }
@@ -197,7 +205,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         protected void onPostExecute(String result) {
             SharedPreferences.Editor editor = sharedPref.edit();
-            if (result != "") {
+            if (!result.equals("")) {
                 editor.putString(getString(R.string.userid), result);
                 editor.apply();
             }
@@ -205,13 +213,13 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public class JoinGroupTask extends AsyncTask<String, Void, String> {
+    private class JoinGroupTask extends AsyncTask<String, Void, String> {
         private Context UIContext;
         private boolean repeat;
         private String groupIdText;
         private String userid;
 
-        public JoinGroupTask(Context context, boolean repeat, String groupIdText, String userid) {
+        private JoinGroupTask(Context context, boolean repeat, String groupIdText, String userid) {
             this.UIContext = context;
             this.repeat = repeat;
             this.groupIdText = groupIdText;
@@ -225,15 +233,14 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         protected void onPostExecute(String result) {
-            if (!result.contains(groupIdText) || result.equals("[]")) {
-                new JoinGroupTask(UIContext, false, groupIdText, userid)
+            if (groupIdText.isEmpty() || result.equals("[]")) {
+                new CreateGroupTask(UIContext, false)
                         .execute(
                                 BACKEND + "/group/create",
                                 "POST",
                                 "{\"userid\": " + userid + "}"
                         );
             } else {
-                groupIdText = result;
                 new ConnectTask(UIContext, false)
                         .execute(
                                 BACKEND + "/group/" + groupIdText + "/join",
@@ -241,8 +248,12 @@ public class MainActivity extends AppCompatActivity {
                                 "{\"userid\": " + userid + "}"
                         );
                 groupIdEditText.setText(groupIdText);
-                groupId = result;
+                groupId = groupIdText;
+
+                new GetMessagesTask(UIContext, true).execute(BACKEND + "/group/" + groupId, "GET");
             }
+            messageJsons.clear();
+            messages.clear();
             if (repeat) {
                 Handler h = new Handler();
                 Runnable r = new Runnable() {
@@ -256,11 +267,97 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public class ConnectTask extends AsyncTask<String, Void, String> {
+    private class CreateGroupTask extends AsyncTask<String, Void, String> {
         private Context UIContext;
         private boolean repeat;
 
-        public ConnectTask(Context context, boolean repeat) {
+        private CreateGroupTask(Context context, boolean repeat) {
+            this.UIContext = context;
+            this.repeat = repeat;
+        }
+
+        @Override
+        protected String doInBackground(String... params) {
+            return connectToServer(this.repeat, params);
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            groupIdEditText.setText(result);
+            groupId = result;
+            new GetMessagesTask(UIContext, true).execute(BACKEND + "/group/" + groupId, "GET");
+            if (repeat) {
+                Handler h = new Handler();
+                Runnable r = new Runnable() {
+                    @Override
+                    public void run() {
+                        new ConnectTask(UIContext, true).execute();
+                    }
+                };
+                h.postDelayed(r, 5000);
+            }
+        }
+    }
+
+    private class GetMessagesTask extends AsyncTask<String, Void, String> {
+        private Context UIContext;
+        private boolean repeat;
+        String[] params;
+
+        private GetMessagesTask(Context context, boolean repeat) {
+            this.UIContext = context;
+            this.repeat = repeat;
+        }
+
+        @Override
+        protected String doInBackground(String... params) {
+            this.params = params;
+            String result = connectToServer(this.repeat, params);
+            JSONArray jsonArray = null;
+            try {
+                jsonArray = new JSONArray(result);
+                JSONArray messageArray = jsonArray.getJSONObject(0).getJSONArray("messages");
+                ArrayList<String> newMessageJsons = new ArrayList<String>();
+                if (messageArray != null) {
+                    for (int i = 0; i < messageArray.length(); i++) {
+                        newMessageJsons.add(messageArray.getString(i));
+                    }
+                }
+                newMessageJsons.removeAll(messageJsons);
+                messageJsons.addAll(newMessageJsons);
+                for (String s : newMessageJsons) {
+                    JSONObject messageJson = new JSONObject(s);
+                    String m = messageJson.getString("message");
+                    Message msg = h.obtainMessage(0, m);
+                    h.sendMessage(msg);
+                }
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            return result;
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            if (repeat) {
+                checkMessages = new Handler();
+                checkMessageRunnable = new Runnable() {
+                    @Override
+                    public void run() {
+                        new GetMessagesTask(UIContext, true).execute(params);
+                    }
+                };
+                checkMessages.postDelayed(checkMessageRunnable, 5000);
+            }
+        }
+    }
+
+
+    private class ConnectTask extends AsyncTask<String, Void, String> {
+        private Context UIContext;
+        private boolean repeat;
+
+        private ConnectTask(Context context, boolean repeat) {
             this.UIContext = context;
             this.repeat = repeat;
         }
@@ -329,11 +426,6 @@ public class MainActivity extends AppCompatActivity {
             if (urlConnection != null) {
                 urlConnection.disconnect();
             }
-        }
-
-        if (repeat && !string.isEmpty()) {
-            Message msg = h.obtainMessage(0, string);
-            h.sendMessage(msg);
         }
 
         return string;
